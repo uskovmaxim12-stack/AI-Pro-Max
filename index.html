@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI Chat Interface</title>
+    <!-- Telegram Web App SDK (опционально, для цветовой схемы) -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* Определение CSS-переменных для светлой и тёмной темы */
+        :root {
+            --bg-color: #f5f5f5;
+            --header-bg: #ffffff;
+            --text-color: #333333;
+            --input-bg: #ffffff;
+            --bot-bubble-bg: #e9e9eb;
+            --user-bubble-bg: #007aff;
+            --user-text: #ffffff;
+            --hint-color: #8e8e93;
+            --shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            --border-color: #e0e0e0;
+        }
+
+        /* Тёмная тема (по умолчанию, если нет Telegram) */
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-color: #1c1c1e;
+                --header-bg: #2c2c2e;
+                --text-color: #ffffff;
+                --input-bg: #2c2c2e;
+                --bot-bubble-bg: #3a3a3c;
+                --user-bubble-bg: #0a84ff;
+                --user-text: #ffffff;
+                --hint-color: #98989e;
+                --border-color: #3a3a3c;
+            }
+        }
+
+        /* Если используется Telegram, переопределяем переменные из темы Telegram */
+        body.telegram-theme {
+            --bg-color: var(--tg-theme-secondary-bg-color, #1c1c1e);
+            --header-bg: var(--tg-theme-bg-color, #2c2c2e);
+            --text-color: var(--tg-theme-text-color, #ffffff);
+            --input-bg: var(--tg-theme-secondary-bg-color, #2c2c2e);
+            --bot-bubble-bg: var(--tg-theme-bg-color, #3a3a3c);
+            --user-bubble-bg: var(--tg-theme-button-color, #0a84ff);
+            --user-text: var(--tg-theme-button-text-color, #ffffff);
+            --hint-color: var(--tg-theme-hint-color, #98989e);
+            --border-color: var(--tg-theme-section-separator-color, #3a3a3c);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* Шапка */
+        .header {
+            padding: 16px 20px;
+            background-color: var(--header-bg);
+            box-shadow: var(--shadow);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            z-index: 10;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            color: white;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            flex: 1;
+        }
+
+        .status {
+            font-size: 14px;
+            color: var(--hint-color);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #4caf50;
+            box-shadow: 0 0 8px #4caf50;
+        }
+
+        .dot.offline {
+            background-color: #ff3b30;
+            box-shadow: 0 0 8px #ff3b30;
+        }
+
+        /* Контейнер сообщений */
+        #chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            scroll-behavior: smooth;
+        }
+
+        /* Обёртка сообщения */
+        .message-wrapper {
+            display: flex;
+            align-items: flex-end;
+            gap: 8px;
+            max-width: 85%;
+        }
+
+        .message-wrapper.user {
+            margin-left: auto;
+            flex-direction: row-reverse;
+        }
+
+        .avatar.small {
+            width: 32px;
+            height: 32px;
+            font-size: 18px;
+        }
+
+        .message-bubble {
+            padding: 12px 16px;
+            border-radius: 20px;
+            font-size: 15px;
+            line-height: 1.5;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .message-wrapper.bot .message-bubble {
+            background-color: var(--bot-bubble-bg);
+            border-bottom-left-radius: 4px;
+        }
+
+        .message-wrapper.user .message-bubble {
+            background-color: var(--user-bubble-bg);
+            color: var(--user-text);
+            border-bottom-right-radius: 4px;
+        }
+
+        /* Индикатор печати */
+        .typing-indicator {
+            background-color: var(--bot-bubble-bg);
+            padding: 12px 18px;
+            border-radius: 20px;
+            border-bottom-left-radius: 4px;
+            display: flex;
+            gap: 6px;
+            width: fit-content;
+        }
+
+        .typing-indicator span {
+            width: 8px;
+            height: 8px;
+            background-color: var(--hint-color);
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-indicator span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-indicator span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes typing {
+            0%, 60%, 100% {
+                transform: translateY(0);
+                opacity: 0.6;
+            }
+            30% {
+                transform: translateY(-6px);
+                opacity: 1;
+            }
+        }
+
+        /* Поле ввода */
+        .input-area {
+            background-color: var(--header-bg);
+            border-top: 1px solid var(--border-color);
+            padding: 16px 20px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        #message-input {
+            flex: 1;
+            padding: 12px 20px;
+            border: 1px solid var(--border-color);
+            border-radius: 30px;
+            background-color: var(--input-bg);
+            color: var(--text-color);
+            font-size: 16px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        #message-input:focus {
+            border-color: var(--user-bubble-bg);
+        }
+
+        #message-input:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        #send-button {
+            width: 50px;
+            height: 50px;
+            border: none;
+            border-radius: 50%;
+            background-color: var(--user-bubble-bg);
+            color: var(--user-text);
+            font-size: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.2s, opacity 0.2s;
+            box-shadow: 0 4px 10px rgba(0, 122, 255, 0.3);
+        }
+
+        #send-button:hover {
+            transform: scale(1.05);
+        }
+
+        #send-button:active {
+            transform: scale(0.95);
+        }
+
+        #send-button:disabled {
+            opacity: 0.5;
+            transform: none;
+            box-shadow: none;
+            cursor: not-allowed;
+        }
+
+        /* Сообщение об ошибке */
+        .error-message {
+            background-color: #ff3b30;
+            color: white;
+            padding: 10px 16px;
+            border-radius: 10px;
+            text-align: center;
+            margin: 10px 20px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="avatar">🤖</div>
+        <h1>AI Chat</h1>
+        <div class="status" id="status">
+            <span class="dot" id="status-dot"></span>
+            <span id="status-text">Подключение...</span>
+        </div>
+    </div>
+
+    <div id="chat-container">
+        <!-- Приветственное сообщение будет добавлено через JS -->
+    </div>
+
+    <div class="input-area">
+        <input type="text" id="message-input" placeholder="Введите сообщение..." autocomplete="off">
+        <button id="send-button" disabled>➤</button>
+    </div>
+
+    <script>
+        (function() {
+            // Определяем, используем ли мы Telegram
+            const tg = window.Telegram?.WebApp;
+            if (tg) {
+                tg.ready();
+                tg.expand();
+                document.body.classList.add('telegram-theme');
+            }
+
+            // Конфигурация - замените на URL вашего сервера
+            const API_URL = 'https://ваш-сервер.com/generate'; // ⚠️ ЗАМЕНИТЕ НА РЕАЛЬНЫЙ
+
+            // Элементы DOM
+            const chatContainer = document.getElementById('chat-container');
+            const inputField = document.getElementById('message-input');
+            const sendButton = document.getElementById('send-button');
+            const statusDot = document.getElementById('status-dot');
+            const statusText = document.getElementById('status-text');
+
+            let isGenerating = false;
+            let conversationHistory = []; // можно хранить историю для контекста
+
+            // Функция обновления статуса
+            function setStatus(ready, text) {
+                if (ready) {
+                    statusDot.className = 'dot';
+                    statusText.textContent = text || 'Готов';
+                } else {
+                    statusDot.className = 'dot offline';
+                    statusText.textContent = text || 'Ошибка';
+                }
+            }
+
+            // Добавление сообщения в чат
+            function addMessage(text, sender) {
+                const wrapper = document.createElement('div');
+                wrapper.className = `message-wrapper ${sender}`;
+
+                const avatar = document.createElement('div');
+                avatar.className = `avatar small`;
+                avatar.textContent = sender === 'user' ? '👤' : '🤖';
+
+                const bubble = document.createElement('div');
+                bubble.className = 'message-bubble';
+                bubble.textContent = text;
+
+                wrapper.appendChild(avatar);
+                wrapper.appendChild(bubble);
+                chatContainer.appendChild(wrapper);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+
+            // Показать индикатор "печатает"
+            function showTyping() {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'message-wrapper bot';
+                wrapper.id = 'typing-wrapper';
+
+                const avatar = document.createElement('div');
+                avatar.className = 'avatar small';
+                avatar.textContent = '🤖';
+
+                const indicator = document.createElement('div');
+                indicator.className = 'typing-indicator';
+                indicator.innerHTML = '<span></span><span></span><span></span>';
+
+                wrapper.appendChild(avatar);
+                wrapper.appendChild(indicator);
+                chatContainer.appendChild(wrapper);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+
+            function removeTyping() {
+                const typing = document.getElementById('typing-wrapper');
+                if (typing) typing.remove();
+            }
+
+            // Отправка сообщения на сервер
+            async function sendMessage(userMessage) {
+                if (isGenerating) return;
+                isGenerating = true;
+                sendButton.disabled = true;
+                inputField.disabled = true;
+                setStatus(false, 'Думаю...');
+
+                // Добавляем сообщение пользователя
+                addMessage(userMessage, 'user');
+                conversationHistory.push({ role: 'user', content: userMessage });
+
+                // Показываем индикатор
+                showTyping();
+
+                try {
+                    const response = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: userMessage,
+                            history: conversationHistory.slice(-10) // передаём последние 10 сообщений для контекста
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    const botReply = data.reply || '...';
+
+                    // Добавляем ответ бота
+                    conversationHistory.push({ role: 'assistant', content: botReply });
+                    removeTyping();
+                    addMessage(botReply, 'bot');
+                    setStatus(true, 'Готов');
+                } catch (error) {
+                    console.error('Ошибка:', error);
+                    removeTyping();
+                    addMessage('⚠️ Не удалось получить ответ от сервера. Проверьте подключение.', 'bot');
+                    setStatus(false, 'Ошибка');
+                } finally {
+                    isGenerating = false;
+                    sendButton.disabled = false;
+                    inputField.disabled = false;
+                    inputField.focus();
+                }
+            }
+
+            // Обработчики событий
+            sendButton.addEventListener('click', () => {
+                const msg = inputField.value.trim();
+                if (msg && !isGenerating) {
+                    inputField.value = '';
+                    sendMessage(msg);
+                }
+            });
+
+            inputField.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendButton.click();
+                }
+            });
+
+            // Проверка доступности сервера (опционально)
+            async function checkServer() {
+                try {
+                    const response = await fetch(API_URL.replace('/generate', '/health'), { method: 'GET' });
+                    if (response.ok) {
+                        setStatus(true, 'Готов');
+                        sendButton.disabled = false;
+                        inputField.disabled = false;
+                        inputField.focus();
+                    } else {
+                        setStatus(false, 'Сервер не отвечает');
+                    }
+                } catch {
+                    setStatus(false, 'Сервер недоступен');
+                }
+            }
+
+            // Приветственное сообщение
+            addMessage('Здравствуйте! Я нейросеть, работающая на собственном движке. Задайте мне вопрос.', 'bot');
+
+            // Проверяем сервер
+            checkServer();
+        })();
+    </script>
+</body>
+</html>
